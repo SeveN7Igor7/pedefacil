@@ -1,18 +1,25 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import { createServer } from 'http';
 import routes from './routes/index.js';
 import { whatsappService } from './services/whatsapp.service.js';
 import { chatService } from './services/chat.service.js';
+import { webhookService } from './services/webhook.service.js';
 import { PrismaClient } from '@prisma/client'; // Importar PrismaClient
 
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
 const prisma = new PrismaClient(); // Instanciar PrismaClient
 
 app.use(cors());
 app.use(express.json());
+
+// Servir arquivos estáticos de upload
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Middleware para logar todas as requisições
 app.use((req, res, next) => {
@@ -28,7 +35,7 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   
   // Verificar conexão com o banco de dados
@@ -42,6 +49,9 @@ app.listen(PORT, async () => {
   } finally {
     await prisma.$disconnect(); // Desconectar após a verificação inicial
   }
+
+  // 🚀 Inicializar serviço de webhooks (WebSocket)
+  webhookService.initialize(server);
 
   // Configurar integração entre WhatsApp e Chat services
   whatsappService.setChatService(chatService);

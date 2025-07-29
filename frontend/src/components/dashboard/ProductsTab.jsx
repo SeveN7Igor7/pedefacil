@@ -6,6 +6,8 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { toast } from 'sonner';
 import { 
   Plus, 
   Edit, 
@@ -15,25 +17,33 @@ import {
   DollarSign,
   Eye,
   EyeOff,
-  RefreshCw
+  RefreshCw,
+  Upload,
+  Image,
+  X
 } from 'lucide-react';
 
 const ProductsTab = ({ restaurant }) => {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     price: '',
+    categoryId: 'null', // Valor padrão como string 'null'
     isActive: true
   });
 
   useEffect(() => {
     fetchProducts();
+    fetchCategories();
   }, []);
 
   useEffect(() => {
@@ -51,8 +61,23 @@ const ProductsTab = ({ restaurant }) => {
       }
     } catch (error) {
       console.error('Erro ao buscar produtos:', error);
+      toast.error('Erro ao carregar produtos');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_ENDPOINT}/api/categories/restaurant/${restaurant.id}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data.data || []);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar categorias:', error);
+      toast.error('Erro ao carregar categorias');
     }
   };
 
@@ -62,7 +87,8 @@ const ProductsTab = ({ restaurant }) => {
     if (searchTerm) {
       filtered = filtered.filter(product => 
         product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        product.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        product.category?.name?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -77,6 +103,49 @@ const ProductsTab = ({ restaurant }) => {
     }));
   };
 
+  const handleCategoryChange = (value) => {
+    setFormData(prev => ({
+      ...prev,
+      categoryId: value
+    }));
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validar tipo de arquivo
+      if (!file.type.startsWith('image/')) {
+        toast.error('Por favor, selecione apenas arquivos de imagem');
+        return;
+      }
+
+      // Validar tamanho (5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('A imagem deve ter no máximo 5MB');
+        return;
+      }
+
+      setSelectedImage(file);
+      
+      // Criar preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    // Limpar o input file
+    const fileInput = document.getElementById('product-image');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -87,30 +156,40 @@ const ProductsTab = ({ restaurant }) => {
       
       const method = editingProduct ? 'PUT' : 'POST';
       
+      // Criar FormData para enviar arquivo
+      const formDataToSend = new FormData();
+      formDataToSend.append('name', formData.name);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('price', parseFloat(formData.price));
+      formDataToSend.append('restaurantId', restaurant.id);
+      formDataToSend.append('isActive', formData.isActive);
+      
+      // Tratar categoryId: se for 'null', não enviar ou enviar como null
+      if (formData.categoryId && formData.categoryId !== 'null') {
+        formDataToSend.append('categoryId', formData.categoryId);
+      }
+      
+      if (selectedImage) {
+        formDataToSend.append('image', selectedImage);
+      }
+      
       const response = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...formData,
-          price: parseFloat(formData.price),
-          restaurantId: restaurant.id
-        }),
+        body: formDataToSend, // Não definir Content-Type, deixar o browser definir
       });
 
       if (response.ok) {
         await fetchProducts();
         setIsDialogOpen(false);
         resetForm();
-        alert(editingProduct ? 'Produto atualizado com sucesso!' : 'Produto criado com sucesso!');
+        toast.success(editingProduct ? 'Produto atualizado com sucesso!' : 'Produto criado com sucesso!');
       } else {
         const data = await response.json();
-        alert(data.error || 'Erro ao salvar produto');
+        toast.error(data.error || 'Erro ao salvar produto');
       }
     } catch (error) {
       console.error('Erro ao salvar produto:', error);
-      alert('Erro de conexão');
+      toast.error('Erro de conexão');
     }
   };
 
@@ -120,8 +199,15 @@ const ProductsTab = ({ restaurant }) => {
       name: product.name,
       description: product.description || '',
       price: product.price.toString(),
+      categoryId: product.categoryId ? product.categoryId.toString() : 'null',
       isActive: product.isActive
     });
+    
+    // Se o produto tem imagem, mostrar preview
+    if (product.imageUrl) {
+      setImagePreview(`${import.meta.env.VITE_BACKEND_ENDPOINT}${product.imageUrl}`);
+    }
+    
     setIsDialogOpen(true);
   };
 
@@ -137,14 +223,14 @@ const ProductsTab = ({ restaurant }) => {
 
       if (response.ok) {
         await fetchProducts();
-        alert('Produto excluído com sucesso!');
+        toast.success('Produto excluído com sucesso!');
       } else {
         const data = await response.json();
-        alert(data.error || 'Erro ao excluir produto');
+        toast.error(data.error || 'Erro ao excluir produto');
       }
     } catch (error) {
       console.error('Erro ao excluir produto:', error);
-      alert('Erro de conexão');
+      toast.error('Erro de conexão');
     }
   };
 
@@ -162,14 +248,14 @@ const ProductsTab = ({ restaurant }) => {
 
       if (response.ok) {
         await fetchProducts();
-        alert(`Produto ${!currentStatus ? 'ativado' : 'desativado'} com sucesso!`);
+        toast.success(`Produto ${!currentStatus ? 'ativado' : 'desativado'} com sucesso!`);
       } else {
         const data = await response.json();
-        alert(data.error || 'Erro ao atualizar status do produto');
+        toast.error(data.error || 'Erro ao atualizar status do produto');
       }
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
-      alert('Erro de conexão');
+      toast.error('Erro de conexão');
     }
   };
 
@@ -178,9 +264,18 @@ const ProductsTab = ({ restaurant }) => {
       name: '',
       description: '',
       price: '',
+      categoryId: 'null', // Resetar para 'null' em vez de string vazia
       isActive: true
     });
     setEditingProduct(null);
+    setSelectedImage(null);
+    setImagePreview(null);
+    
+    // Limpar o input file
+    const fileInput = document.getElementById('product-image');
+    if (fileInput) {
+      fileInput.value = '';
+    }
   };
 
   const formatCurrency = (value) => {
@@ -195,7 +290,7 @@ const ProductsTab = ({ restaurant }) => {
       <div className="space-y-6">
         <div className="flex items-center justify-center py-12">
           <div className="text-center space-y-4">
-            <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-primary" />
             <p className="text-muted-foreground">Carregando produtos...</p>
           </div>
         </div>
@@ -208,38 +303,33 @@ const ProductsTab = ({ restaurant }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Gestão de Produtos</h2>
+          <h2 className="text-2xl font-bold">Produtos</h2>
           <p className="text-muted-foreground">
             Gerencie o cardápio do seu restaurante
           </p>
         </div>
-        <div className="flex space-x-2">
-          <Button onClick={fetchProducts} variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Atualizar
-          </Button>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button onClick={resetForm}>
-                <Plus className="h-4 w-4 mr-2" />
-                Novo Produto
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
-                  {editingProduct ? 'Editar Produto' : 'Novo Produto'}
-                </DialogTitle>
-                <DialogDescription>
-                  {editingProduct 
-                    ? 'Atualize as informações do produto' 
-                    : 'Adicione um novo produto ao seu cardápio'
-                  }
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+        
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={resetForm}>
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Produto
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editingProduct ? 'Editar Produto' : 'Novo Produto'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingProduct ? 'Atualize as informações do produto' : 'Adicione um novo produto ao cardápio'}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Nome do Produto</Label>
+                  <Label htmlFor="name">Nome do Produto *</Label>
                   <Input
                     id="name"
                     name="name"
@@ -249,21 +339,9 @@ const ProductsTab = ({ restaurant }) => {
                     required
                   />
                 </div>
-
+                
                 <div className="space-y-2">
-                  <Label htmlFor="description">Descrição</Label>
-                  <Textarea
-                    id="description"
-                    name="description"
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    placeholder="Descreva os ingredientes e características do produto"
-                    rows={3}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="price">Preço (R$)</Label>
+                  <Label htmlFor="price">Preço *</Label>
                   <Input
                     id="price"
                     name="price"
@@ -272,46 +350,114 @@ const ProductsTab = ({ restaurant }) => {
                     min="0"
                     value={formData.price}
                     onChange={handleInputChange}
-                    placeholder="0,00"
+                    placeholder="0.00"
                     required
                   />
                 </div>
+              </div>
 
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="isActive"
-                    name="isActive"
-                    checked={formData.isActive}
-                    onChange={handleInputChange}
-                    className="rounded"
+              <div className="space-y-2">
+                <Label htmlFor="categoryId">Categoria</Label>
+                <Select value={formData.categoryId} onValueChange={handleCategoryChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="null">Sem categoria</SelectItem>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id.toString()}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Descrição</Label>
+                <Textarea
+                  id="description"
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  placeholder="Descreva o produto..."
+                  rows={3}
+                />
+              </div>
+
+              {/* Upload de Imagem */}
+              <div className="space-y-2">
+                <Label htmlFor="product-image">Imagem do Produto</Label>
+                <div className="space-y-4">
+                  {imagePreview ? (
+                    <div className="relative">
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="w-full h-48 object-cover rounded-lg border"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="absolute top-2 right-2"
+                        onClick={removeImage}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                      <Image className="h-12 w-12 mx-auto text-gray-400 mb-2" />
+                      <p className="text-sm text-gray-500 mb-2">
+                        Clique para selecionar uma imagem
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        PNG, JPG até 5MB
+                      </p>
+                    </div>
+                  )}
+                  
+                  <Input
+                    id="product-image"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="cursor-pointer"
                   />
-                  <Label htmlFor="isActive">Produto ativo (disponível para venda)</Label>
                 </div>
+              </div>
 
-                <div className="flex space-x-2 pt-4">
-                  <Button type="submit" className="flex-1">
-                    {editingProduct ? 'Atualizar' : 'Criar'} Produto
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setIsDialogOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="isActive"
+                  name="isActive"
+                  checked={formData.isActive}
+                  onChange={handleInputChange}
+                  className="rounded"
+                />
+                <Label htmlFor="isActive">Produto ativo</Label>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit">
+                  {editingProduct ? 'Atualizar' : 'Criar'} Produto
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* Search */}
-      <Card>
-        <CardContent className="p-4">
+      {/* Filtros */}
+      <div className="flex items-center space-x-4">
+        <div className="flex-1">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
             <Input
               placeholder="Buscar produtos..."
               value={searchTerm}
@@ -319,152 +465,114 @@ const ProductsTab = ({ restaurant }) => {
               className="pl-10"
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        
+        <Button onClick={fetchProducts} variant="outline" size="sm">
+          <RefreshCw className="h-4 w-4 mr-1" />
+          Atualizar
+        </Button>
+      </div>
 
-      {/* Products Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredProducts.length > 0 ? (
+      {/* Lista de produtos */}
+      <div className="grid gap-4">
+        {filteredProducts.length === 0 ? (
+          <Card>
+            <CardContent className="flex items-center justify-center h-32">
+              <div className="text-center">
+                <Package className="h-12 w-12 mx-auto text-gray-400 mb-2" />
+                <p className="text-gray-500">Nenhum produto encontrado</p>
+                <p className="text-sm text-gray-400">Adicione produtos ao seu cardápio</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
           filteredProducts.map((product) => (
             <Card key={product.id} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg">{product.name}</CardTitle>
-                    <div className="flex items-center space-x-2 mt-2">
-                      <Badge variant={product.isActive ? 'default' : 'secondary'}>
-                        {product.isActive ? 'Ativo' : 'Inativo'}
-                      </Badge>
-                      <div className="text-2xl font-bold text-primary">
-                        {formatCurrency(product.price)}
+              <CardContent className="p-6">
+                <div className="flex items-start space-x-4">
+                  {/* Imagem do produto */}
+                  <div className="flex-shrink-0">
+                    {product.imageUrl ? (
+                      <img
+                        src={`${import.meta.env.VITE_BACKEND_ENDPOINT}${product.imageUrl}`}
+                        alt={product.name}
+                        className="w-20 h-20 object-cover rounded-lg border"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 bg-gray-100 rounded-lg border flex items-center justify-center">
+                        <Image className="h-8 w-8 text-gray-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Informações do produto */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <h3 className="text-lg font-semibold">{product.name}</h3>
+                          <Badge variant={product.isActive ? 'default' : 'secondary'}>
+                            {product.isActive ? 'Ativo' : 'Inativo'}
+                          </Badge>
+                          {product.category && (
+                            <Badge variant="outline">
+                              {product.category.name}
+                            </Badge>
+                          )}
+                        </div>
+                        
+                        {product.description && (
+                          <p className="text-gray-600 text-sm mb-2 line-clamp-2">
+                            {product.description}
+                          </p>
+                        )}
+                        
+                        <div className="flex items-center space-x-2">
+                          <DollarSign className="h-4 w-4 text-green-600" />
+                          <span className="text-lg font-bold text-green-600">
+                            {formatCurrency(product.price)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ações */}
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleProductStatus(product.id, product.isActive)}
+                        >
+                          {product.isActive ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(product)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(product.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {product.description && (
-                    <p className="text-muted-foreground text-sm leading-relaxed">
-                      {product.description}
-                    </p>
-                  )}
-                  
-                  <div className="flex space-x-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleEdit(product)}
-                      className="flex-1"
-                    >
-                      <Edit className="h-4 w-4 mr-1" />
-                      Editar
-                    </Button>
-                    
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => toggleProductStatus(product.id, product.isActive)}
-                      className="flex-1"
-                    >
-                      {product.isActive ? (
-                        <>
-                          <EyeOff className="h-4 w-4 mr-1" />
-                          Desativar
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="h-4 w-4 mr-1" />
-                          Ativar
-                        </>
-                      )}
-                    </Button>
-                    
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleDelete(product.id)}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </div>
                 </div>
               </CardContent>
             </Card>
           ))
-        ) : (
-          <div className="col-span-full">
-            <Card>
-              <CardContent className="text-center py-12">
-                <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-medium mb-2">
-                  {searchTerm ? 'Nenhum produto encontrado' : 'Nenhum produto cadastrado'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {searchTerm 
-                    ? 'Tente ajustar o termo de busca' 
-                    : 'Comece adicionando produtos ao seu cardápio'
-                  }
-                </p>
-                {!searchTerm && (
-                  <Button onClick={() => setIsDialogOpen(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Adicionar Primeiro Produto
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          </div>
         )}
       </div>
-
-      {/* Stats */}
-      {products.length > 0 && (
-        <div className="grid md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Package className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <div className="text-2xl font-bold">{products.length}</div>
-                  <div className="text-sm text-muted-foreground">Total de Produtos</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Eye className="h-5 w-5 text-green-600" />
-                <div>
-                  <div className="text-2xl font-bold text-green-600">
-                    {products.filter(p => p.isActive).length}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Produtos Ativos</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <DollarSign className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <div className="text-2xl font-bold">
-                    {formatCurrency(
-                      products.reduce((sum, product) => sum + product.price, 0) / products.length
-                    )}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Preço Médio</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 };

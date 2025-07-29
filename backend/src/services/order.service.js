@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { customerService } from './customer.service.js';
 import { tableService } from './table.service.js';
 import { whatsappService } from './whatsapp.service.js';
+import { webhookService } from './webhook.service.js';
 
 const prisma = new PrismaClient();
 
@@ -102,6 +103,9 @@ export const orderService = {
     });
 
     const finalOrder = await this.findById(order.id);
+
+    // 🚀 WEBHOOK: Notificar sobre novo pedido
+    webhookService.notifyNewOrder(finalOrder);
 
     // Enviar notificação WhatsApp
     try {
@@ -204,6 +208,7 @@ export const orderService = {
       throw new Error('Apenas pedidos pendentes podem ser aceitos');
     }
 
+    const oldStatus = order.status;
     const updatedOrder = await prisma.order.update({
       where: { id: parseInt(id) },
       data: { status: 'preparing' },
@@ -218,6 +223,10 @@ export const orderService = {
         }
       }
     });
+
+    // 🚀 WEBHOOK: Notificar sobre pedido aceito
+    webhookService.notifyOrderAccepted(updatedOrder);
+    webhookService.notifyOrderStatusUpdate(updatedOrder, oldStatus, 'preparing');
 
     // Enviar notificação WhatsApp sobre aceitação do pedido
     try {
@@ -241,6 +250,12 @@ export const orderService = {
       throw new Error('Status inválido');
     }
 
+    const order = await this.findById(id);
+    if (!order) {
+      throw new Error('Pedido não encontrado');
+    }
+
+    const oldStatus = order.status;
     const updatedOrder = await prisma.order.update({
       where: { id: parseInt(id) },
       data: { status },
@@ -255,6 +270,9 @@ export const orderService = {
         }
       }
     });
+
+    // 🚀 WEBHOOK: Notificar sobre mudança de status
+    webhookService.notifyOrderStatusUpdate(updatedOrder, oldStatus, status);
 
     // Enviar notificação WhatsApp sobre mudança de status
     try {
@@ -273,6 +291,14 @@ export const orderService = {
   },
 
   async delete(id) {
+    const order = await this.findById(id);
+    if (!order) {
+      throw new Error('Pedido não encontrado');
+    }
+
+    // 🚀 WEBHOOK: Notificar sobre pedido deletado (antes de deletar)
+    webhookService.notifyOrderDeleted(order.id, order.restaurantId);
+
     // Primeiro deleta os itens do pedido
     await prisma.orderItem.deleteMany({
       where: { orderId: parseInt(id) }
