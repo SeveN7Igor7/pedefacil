@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Restaurant {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  cnpj      String   @unique
+  ownerName String
+  phone     String   // DDDNUMBER (ex: 89994582600)
+  modeloWhatsapp String? // DDD + 8 dígitos (ex: 8994582600)
+  urlName   String   @unique
+  email     String   @unique
+  password  String
+  addressCep String?
+  addressStreet String?
+  addressNumber String?
+  addressComplement String?
+  addressNeighborhood String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tables    Table[]
+  products  Product[]
+  orders    Order[]
+  chats     Chat[]
+}
+
+model Table {
+  id           Int      @id @default(autoincrement())
+  number       Int
+  restaurantId Int
+  isOccupied   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  orders       Order[]
+  
+  @@unique([number, restaurantId])
+}
+
+model Customer {
+  id           Int      @id @default(autoincrement())
+  fullName     String
+  phone        String   @unique // DDDNUMBER (ex: 89994582600)
+  modeloWhatsapp String?  // DDD + 8 dígitos (ex: 8994582600)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  orders       Order[]
+  chats        Chat[]
+}
+
+model Product {
+  id           Int     @id @default(autoincrement())
+  name         String
+  description  String?
+  price        Float
+  restaurantId Int
+  isActive     Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  orderItems   OrderItem[]
+}
+
+model Order {
+  id                 Int      @id @default(autoincrement())
+  customerId         Int
+  restaurantId       Int
+  tableId            Int?     // null para delivery, preenchido para pedidos na mesa
+  orderType          String   // "delivery" ou "table"
+  status             String   @default("pending") // pending, preparing, delivered, finished, cleaned
+  total              Float
+  methodType         String   // card, cash, pix
+  addressCep         String?
+  addressStreet      String?
+  addressNumber      String?
+  addressNeighborhood String?  // ✅ ADICIONE ESTE CAMPO AQUI
+  addressComplement  String?
+  additionalInfo     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  customer           Customer   @relation(fields: [customerId], references: [id])
+  restaurant         Restaurant @relation(fields: [restaurantId], references: [id])
+  table              Table?     @relation(fields: [tableId], references: [id])
+  items              OrderItem[]
+}
+
+model OrderItem {
+  id        Int @id @default(autoincrement())
+  orderId   Int
+  productId Int
+  quantity  Int
+  price     Float
+  
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Chat {
+  id           Int      @id @default(autoincrement())
+  customerId   Int
+  restaurantId Int
+  message      String
+  sender       String   // \'customer\' ou \'restaurant\'
+  createdAt    DateTime @default(now())
+
+  customer     Customer   @relation(fields: [customerId], references: [id])
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([customerId, restaurantId])
+}
+
+
+
